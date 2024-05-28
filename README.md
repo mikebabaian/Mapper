@@ -18,3 +18,5 @@
  3. Navigate to "ENHANCEDMAPSERVERNETCORE_FOLDER/bin/Release/netcoreapp2.1/{YOUR_PLATFORM}/publish/"
  
  4. Run EnhancedMapServerNetCore.exe (if you are using windows, instead use terminal for linux/macos)
+
+this is my random change
