@@ -50,7 +50,7 @@ namespace EnhancedMap.Core
         public static string UOPath { get; set; }
 
         public static float Angle { get; internal set; } = 45;
-
+        public static int UpdateInterval { get; set; }
         public static PlayerObject PlayerInstance { get; private set; }
         public static UserObject TrackedUser { get; set; }
         public static BuildingObject CurrentBuildObject { get; set; }

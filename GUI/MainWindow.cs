@@ -34,9 +34,9 @@ namespace EnhancedMap.GUI
         {
             InitializeComponent();
 
-            Global.MainWindow = this;
 
-            MaximumSize = new Size(1200, 1200);
+
+            Global.MainWindow = this;
             MinimumSize = new Size(MinimumSize.Width, 150);
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
 
@@ -46,9 +46,12 @@ namespace EnhancedMap.GUI
             Text = $"Enhanced Map - {MainCore.MapVersion}";
 #endif
 
-            SettingsWindow = new Settings {Visible = false};
-            ChatWindow = new ChatF {Visible = false, ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false};
-
+            SettingsWindow = new Settings { Visible = false };
+            ChatWindow = new ChatF { Visible = false, ShowInTaskbar = false, MinimizeBox = false, MaximizeBox = false };
+            if (Global.SettingsCollection.ContainsKey("pintotop") && Global.SettingsCollection["pintotop"] is bool topMost)
+            {
+                TopMost = topMost;
+            }
 
             Logger.Log("Initializing main window...");
 
@@ -61,7 +64,7 @@ namespace EnhancedMap.GUI
                 Process.GetCurrentProcess().Kill();
             };
 
-            _panel = new Panel {Parent = this, Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Location = new Point(2, Native.STATUS_BAR_HEIGHT), Size = new Size(ClientRectangle.Width - 4, ClientRectangle.Height - Native.STATUS_BAR_HEIGHT - 2)};
+            _panel = new Panel { Parent = this, Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top, Location = new Point(2, Native.STATUS_BAR_HEIGHT), Size = new Size(ClientRectangle.Width - 4, ClientRectangle.Height - Native.STATUS_BAR_HEIGHT - 2) };
 
 
             _enhancedCanvas = new EnhancedCanvas
@@ -94,7 +97,10 @@ namespace EnhancedMap.GUI
 
             _timer = new System.Windows.Forms.Timer();
             _timer.Tick += _timer_Tick;
-            _timer.Interval = 1000 / Global.SettingsCollection["fps"].ToInt();
+
+            var fps = Global.SettingsCollection["fps"].ToInt();
+            _timer.Interval = 1000 / fps;
+            Global.UpdateInterval = _timer.Interval;
 
 
             // context menu
@@ -128,7 +134,7 @@ namespace EnhancedMap.GUI
                 {
                     RenderObjectsManager.AddSignal(new SignalObject(MouseManager.Location.X, MouseManager.Location.Y));
                     _lastSignalSended = DateTime.Now.AddMilliseconds(500);
-                    NetworkManager.SocketClient.Send(new PAlert((ushort) MouseManager.Location.X, (ushort) MouseManager.Location.Y));
+                    NetworkManager.SocketClient.Send(new PAlert((ushort)MouseManager.Location.X, (ushort)MouseManager.Location.Y));
                 }
             });
             signalsM.DropDownItems.Add(signalsM_panic);
@@ -140,11 +146,9 @@ namespace EnhancedMap.GUI
             //ToolStripMenuItem clearDeathPointsM = new ToolStripMenuItem("Clear death points", null, (sender, e) => { RenderObjectsManager.Get<DeathObject>().ToList().ForEach(s => s.Dispose()); });
             //menu.Items.Add(clearDeathPointsM);
 
-
             menu.Items.Add(new ToolStripSeparator());
 
-
-            ToolStripMenuItem freevM = new ToolStripMenuItem("Free view", null, (sender, e) => { ((ToolStripMenuItem) sender).Checked = Global.FreeView = !Global.FreeView; });
+            ToolStripMenuItem freevM = new ToolStripMenuItem("Free view", null, (sender, e) => { ((ToolStripMenuItem)sender).Checked = Global.FreeView = !Global.FreeView; });
             menu.Items.Add(freevM);
 
             ToolStripMenuItem zooomM = new ToolStripMenuItem("Zoom");
@@ -213,6 +217,11 @@ namespace EnhancedMap.GUI
             });
             menu.Items.Add(flipM);
 
+            ToolStripMenuItem pinM = new ToolStripMenuItem("Pin To Top", null, (sender, e) =>
+            {
+                TopMost = !TopMost;
+            });
+            menu.Items.Add(pinM);
 
             ToolStripMenuItem toolsM = new ToolStripMenuItem("Tools");
             ToolStripMenuItem macroesM = new ToolStripMenuItem("Macroes");
@@ -262,7 +271,7 @@ namespace EnhancedMap.GUI
 
             ToolStripMenuItem connectM = new ToolStripMenuItem("Connect", null, (sender, e) =>
             {
-                ToolStripMenuItem t = (ToolStripMenuItem) sender;
+                ToolStripMenuItem t = (ToolStripMenuItem)sender;
                 if (!NetworkManager.SocketClient.IsConnected)
                     NetworkManager.Connect();
                 else
@@ -277,12 +286,6 @@ namespace EnhancedMap.GUI
             menu.Items.Add(chatM);
 
             menu.Items.Add(new ToolStripSeparator());
-
-            //ToolStripMenuItem wndAttachM = new ToolStripMenuItem("Follow UO window", null, (sender, e) => { ((ToolStripMenuItem)sender).Checked = (bool)(Global.SettingsCollection["followuowindowstate"] = !Global.SettingsCollection["followuowindowstate"].ToBool()); });
-            // menu.Items.Add(wndAttachM);
-            ToolStripMenuItem uoclientsM = new ToolStripMenuItem("UO Clients");
-            menu.Items.Add(uoclientsM);
-
 
             ToolStripMenuItem settingsM = new ToolStripMenuItem("Settings", null, (sender, e) =>
             {
@@ -332,23 +335,15 @@ namespace EnhancedMap.GUI
 
                 freevM.Checked = Global.FreeView;
 
-                uoclientsM.DropDownItems.Clear();
-
-                var clients = UOClientManager.GetClientsWindowTitles();
-                foreach (KeyValuePair<IntPtr, string> c in clients)
-                {
-                    ToolStripMenuItem tc = new ToolStripMenuItem(c.Value, null, (ssender, ee) => { UOClientManager.AttachToClient(c.Key); });
-                    uoclientsM.DropDownItems.Add(tc);
-                }
-
                 connectM.Text = NetworkManager.SocketClient.IsConnected ? "Disconnect" : "Connect";
                 connectM.Image = NetworkManager.SocketClient.IsConnected ? Resources.right : Resources.wrong;
 
                 flipM.Checked = Global.Angle == 45f;
+                pinM.Checked = TopMost;
 
                 usersM.DropDownItems.Clear();
                 var users = RenderObjectsManager.Get<UserObject>();
-                foreach (UserObject user in users)
+                foreach (UserObject user in users.OrderByDescending(x => x is PlayerObject).ThenBy(x => x.Name))
                 {
                     if (user == null || user.IsDisposing)
                         continue;
@@ -415,7 +410,7 @@ namespace EnhancedMap.GUI
                         item.Checked = true;
                 }
 
-                foreach (ToolStripMenuItem item in zooomM.DropDownItems) item.Checked = Global.Zoom == (float) item.Tag;
+                foreach (ToolStripMenuItem item in zooomM.DropDownItems) item.Checked = Global.Zoom == (float)item.Tag;
 
                 markesM.DropDownItems.Clear();
                 markesM.DropDownItems.Add(markesM_local);
@@ -455,7 +450,7 @@ namespace EnhancedMap.GUI
                     ToolStripMenuItem markSubMenu = new ToolStripMenuItem("Remove", null, (ssender, ee) =>
                     {
                         if (NetworkManager.SocketClient.IsConnected)
-                            NetworkManager.SocketClient.Send(new PSharedLabel((ushort) sharedlabel.Position.X, (ushort) sharedlabel.Position.Y, sharedlabel.Map));
+                            NetworkManager.SocketClient.Send(new PSharedLabel((ushort)sharedlabel.Position.X, (ushort)sharedlabel.Position.Y, sharedlabel.Map));
 
                         sharedlabel?.Dispose();
                     });
@@ -760,52 +755,7 @@ namespace EnhancedMap.GUI
 
         private void _timer_Tick(object sender, EventArgs e)
         {
-            UOClientManager.AttachToClient();
             NetworkManager.SocketClient.Sync();
-
-            if (Global.SettingsCollection["followuowindowstate"].ToBool())
-            {
-                FormWindowState state = UOClientManager.GetProcessWindowState(WindowState);
-                if (state != WindowState)
-                {
-                    WindowState = state;
-
-                    switch (WindowState)
-                    {
-                        default:
-                        case FormWindowState.Normal:
-                            if (!ChatWindow.Visible)
-                                ChatWindow.Show(this);
-                            break;
-                        case FormWindowState.Minimized:
-                            if (ChatWindow.Visible)
-                                ChatWindow.Hide();
-                            break;
-                    }
-                }
-            }
-
-            // if (WindowState != FormWindowState.Minimized && !ChatWindow.Visible)
-            // {
-            //ChatWindow.Show(this);
-            // }
-
-
-            //else if (WindowState == FormWindowState.Normal && !ChatWindow.Visible)
-            //   ChatWindow.Show();
-
-            /*switch (WindowState)
-            {
-                default:
-                case FormWindowState.Normal:
-                    if (!ChatWindow.Visible)
-                        ChatWindow.Show();
-                    break;
-                case FormWindowState.Minimized:
-                    if (ChatWindow.Visible)
-                        ChatWindow.Hide();
-                    break;
-            }*/
 
             _counter += _timer.Interval;
             if (_counter >= 100L)
@@ -819,9 +769,9 @@ namespace EnhancedMap.GUI
                 if (_nextRefresh % 1L == 0L && (UpdatePosition() || NetworkManager.SocketClient.ReceivedPackets))
                     _requestRefresh = true;
 
-                if (_checkUOStateForm % 4L == 0)
+                if (_checkUOStateForm % 10L == 0)
                 {
-                    //this.WindowState = UOClientManager.GetProcessWindowState();
+                    UOClientManager.AttachToActiveClient();
                     _checkUOStateForm = 0;
                 }
             }
@@ -944,9 +894,9 @@ namespace EnhancedMap.GUI
 
                 (x, y) = Geometry.RotatePoint(x, y, 1f / Global.Zoom, -1, Global.Angle);
 
-                x += (int) Global.X;
-                y += (int) Global.Y;
-                MouseManager.Location = new Position((short) x, (short) y);
+                x += (int)Global.X;
+                y += (int)Global.Y;
+                MouseManager.Location = new Position((short)x, (short)y);
                 _requestRefresh = true;
             }
         }
@@ -1022,98 +972,98 @@ namespace EnhancedMap.GUI
                     {
                         RenderObjectsManager.AddSignal(new SignalObject(MouseManager.Location.X, MouseManager.Location.Y));
                         _lastSignalSended = DateTime.Now.AddMilliseconds(500);
-                        NetworkManager.SocketClient.Send(new PAlert((ushort) MouseManager.Location.X, (ushort) MouseManager.Location.Y));
+                        NetworkManager.SocketClient.Send(new PAlert((ushort)MouseManager.Location.X, (ushort)MouseManager.Location.Y));
                     }
 
                     break;
                 case Keys.Control | Keys.F:
-                {
-                }
+                    {
+                    }
                     break;
                 case Keys.Up:
-                {
-                    if (!Global.FreeView)
-                        Global.FreeView = true;
+                    {
+                        if (!Global.FreeView)
+                            Global.FreeView = true;
 
-                    Global.X -= 50 / Global.Zoom;
-                    Global.Y -= 50 / Global.Zoom;
+                        Global.X -= 50 / Global.Zoom;
+                        Global.Y -= 50 / Global.Zoom;
 
-                    if (Global.X < 0)
-                        Global.X = 0;
-                    if (Global.Y < 0)
-                        Global.Y = 0;
-                    if (Global.X > Global.Maps[Global.Facet].Width)
-                        Global.X = Global.Maps[Global.Facet].Width;
-                    if (Global.Y > Global.Maps[Global.Facet].Height)
-                        Global.Y = Global.Maps[Global.Facet].Height;
-                }
+                        if (Global.X < 0)
+                            Global.X = 0;
+                        if (Global.Y < 0)
+                            Global.Y = 0;
+                        if (Global.X > Global.Maps[Global.Facet].Width)
+                            Global.X = Global.Maps[Global.Facet].Width;
+                        if (Global.Y > Global.Maps[Global.Facet].Height)
+                            Global.Y = Global.Maps[Global.Facet].Height;
+                    }
                     break;
                 case Keys.Right:
-                {
-                    if (!Global.FreeView)
-                        Global.FreeView = true;
+                    {
+                        if (!Global.FreeView)
+                            Global.FreeView = true;
 
-                    Global.X += 50 / Global.Zoom;
-                    Global.Y -= 50 / Global.Zoom;
+                        Global.X += 50 / Global.Zoom;
+                        Global.Y -= 50 / Global.Zoom;
 
-                    if (Global.X < 0)
-                        Global.X = 0;
-                    if (Global.Y < 0)
-                        Global.Y = 0;
-                    if (Global.X > Global.Maps[Global.Facet].Width)
-                        Global.X = Global.Maps[Global.Facet].Width;
-                    if (Global.Y > Global.Maps[Global.Facet].Height)
-                        Global.Y = Global.Maps[Global.Facet].Height;
-                }
+                        if (Global.X < 0)
+                            Global.X = 0;
+                        if (Global.Y < 0)
+                            Global.Y = 0;
+                        if (Global.X > Global.Maps[Global.Facet].Width)
+                            Global.X = Global.Maps[Global.Facet].Width;
+                        if (Global.Y > Global.Maps[Global.Facet].Height)
+                            Global.Y = Global.Maps[Global.Facet].Height;
+                    }
                     break;
                 case Keys.Down:
-                {
-                    if (!Global.FreeView)
-                        Global.FreeView = true;
-                    Global.X += 50 / Global.Zoom;
-                    Global.Y += 50 / Global.Zoom;
+                    {
+                        if (!Global.FreeView)
+                            Global.FreeView = true;
+                        Global.X += 50 / Global.Zoom;
+                        Global.Y += 50 / Global.Zoom;
 
-                    if (Global.X < 0)
-                        Global.X = 0;
-                    if (Global.Y < 0)
-                        Global.Y = 0;
-                    if (Global.X > Global.Maps[Global.Facet].Width)
-                        Global.X = Global.Maps[Global.Facet].Width;
-                    if (Global.Y > Global.Maps[Global.Facet].Height)
-                        Global.Y = Global.Maps[Global.Facet].Height;
-                }
+                        if (Global.X < 0)
+                            Global.X = 0;
+                        if (Global.Y < 0)
+                            Global.Y = 0;
+                        if (Global.X > Global.Maps[Global.Facet].Width)
+                            Global.X = Global.Maps[Global.Facet].Width;
+                        if (Global.Y > Global.Maps[Global.Facet].Height)
+                            Global.Y = Global.Maps[Global.Facet].Height;
+                    }
                     break;
                 case Keys.Left:
-                {
-                    if (!Global.FreeView)
-                        Global.FreeView = true;
+                    {
+                        if (!Global.FreeView)
+                            Global.FreeView = true;
 
-                    Global.X -= 50 / Global.Zoom;
-                    Global.Y += 50 / Global.Zoom;
+                        Global.X -= 50 / Global.Zoom;
+                        Global.Y += 50 / Global.Zoom;
 
-                    if (Global.X < 0)
-                        Global.X = 0;
-                    if (Global.Y < 0)
-                        Global.Y = 0;
-                    if (Global.X > Global.Maps[Global.Facet].Width)
-                        Global.X = Global.Maps[Global.Facet].Width;
-                    if (Global.Y > Global.Maps[Global.Facet].Height)
-                        Global.Y = Global.Maps[Global.Facet].Height;
-                }
+                        if (Global.X < 0)
+                            Global.X = 0;
+                        if (Global.Y < 0)
+                            Global.Y = 0;
+                        if (Global.X > Global.Maps[Global.Facet].Width)
+                            Global.X = Global.Maps[Global.Facet].Width;
+                        if (Global.Y > Global.Maps[Global.Facet].Height)
+                            Global.Y = Global.Maps[Global.Facet].Height;
+                    }
                     break;
                 default:
-                {
-                    if (msg.Msg == 256)
                     {
-                        string c = Convert.ToChar(MapVirtualKey((uint) keyData, 2)).ToString().ToLower();
-                        if (c == "\0")
-                            break;
+                        if (msg.Msg == 256)
+                        {
+                            string c = Convert.ToChar(MapVirtualKey((uint)keyData, 2)).ToString().ToLower();
+                            if (c == "\0")
+                                break;
 
-                        if (!ChatWindow.Visible) ChatWindow.Visible = true;
+                            if (!ChatWindow.Visible) ChatWindow.Visible = true;
 
-                        ChatWindow.AppendText(c);
+                            ChatWindow.AppendText(c);
+                        }
                     }
-                }
                     break;
             }
 
@@ -1124,62 +1074,62 @@ namespace EnhancedMap.GUI
         {
             switch (m.Msg)
             {
-                case (int) MSG_RECV.HOUSES_BOATS_INFO:
-                {
-                    int x = m.WParam.ToInt32() & 65535;
-                    int y = m.WParam.ToInt32() >> 16;
-                    uint id = (uint) m.LParam - 0x4000;
-
-                    GameHouse gamehouse = HouseReader.GetHouse(id);
-                    if (gamehouse != null)
+                case (int)MSG_RECV.HOUSES_BOATS_INFO:
                     {
-                        x = x - gamehouse.Size.X / 2;
-                        y = y - gamehouse.Size.Y / 2;
+                        int x = m.WParam.ToInt32() & 65535;
+                        int y = m.WParam.ToInt32() >> 16;
+                        uint id = (uint)m.LParam - 0x4000;
 
-                        var houses = RenderObjectsManager.Get<HouseObject>().Where(s => s.Entry.Map == Global.PlayerInstance.Map && new Rectangle(s.Entry.Location.X, s.Entry.Location.Y, s.Entry.Size.Width, s.Entry.Size.Height).IntersectsWith(new Rectangle((short) x, (short) y, gamehouse.Size.X, gamehouse.Size.Y))).ToList();
-
-
-                        if (houses.Count == 0)
+                        GameHouse gamehouse = HouseReader.GetHouse(id);
+                        if (gamehouse != null)
                         {
-                            var h = new HouseObject(new HouseEntry(string.Format("{0} House: {1}x{2} at {3},{4} {5}", id.ToString("X"), gamehouse.Size.X, gamehouse.Size.Y, x, y, Global.PlayerInstance.Map), (ushort) id, new Position((short) x, (short) y), new Size(gamehouse.Size.X, gamehouse.Size.Y), Global.PlayerInstance.Map));
-                            RenderObjectsManager.AddHouse(h);
+                            x = x - gamehouse.Size.X / 2;
+                            y = y - gamehouse.Size.Y / 2;
 
-                            FilesManager.Houses.Add(h.Entry);
+                            var houses = RenderObjectsManager.Get<HouseObject>().Where(s => s.Entry.Map == Global.PlayerInstance.Map && new Rectangle(s.Entry.Location.X, s.Entry.Location.Y, s.Entry.Size.Width, s.Entry.Size.Height).IntersectsWith(new Rectangle((short)x, (short)y, gamehouse.Size.X, gamehouse.Size.Y))).ToList();
+
+
+                            if (houses.Count == 0)
+                            {
+                                var h = new HouseObject(new HouseEntry(string.Format("{0} House: {1}x{2} at {3},{4} {5}", id.ToString("X"), gamehouse.Size.X, gamehouse.Size.Y, x, y, Global.PlayerInstance.Map), (ushort)id, new Position((short)x, (short)y), new Size(gamehouse.Size.X, gamehouse.Size.Y), Global.PlayerInstance.Map));
+                                RenderObjectsManager.AddHouse(h);
+
+                                FilesManager.Houses.Add(h.Entry);
+                            }
                         }
+
+                        break;
                     }
-
-                    break;
-                }
-                case (int) MSG_RECV.DEL_HOUSES_BOATS_INFO:
-                {
-                    break;
-                }
+                case (int)MSG_RECV.DEL_HOUSES_BOATS_INFO:
+                    {
+                        break;
+                    }
                 case 1425: // chat
-                {
-                    string text = string.Empty.FromAtom(m.WParam.ToInt32());
-                    CommandManager.DoCommand(text);
-                }
+                    {
+                        string text = string.Empty.FromAtom(m.WParam.ToInt32());
+                        CommandManager.DoCommand(text);
+                    }
                     break;
-                case (int) MSG_RECV.MOBILE_ADD_STRCT:
-                {
-                    int x = m.WParam.ToInt32() & 65535;
-                    int y = m.WParam.ToInt32() >> 16;
-                    uint serial = (uint) m.LParam.ToInt32();
+                case (int)MSG_RECV.MOBILE_ADD_STRCT:
+                    {
+                        int x = m.WParam.ToInt32() & 65535;
+                        int y = m.WParam.ToInt32() >> 16;
+                        uint serial = (uint)m.LParam.ToInt32();
 
-                    MobileObject mobile = RenderObjectsManager.Get<MobileObject>().SingleOrDefault(s => s.Serial == serial);
-                    if (mobile == null)
-                        RenderObjectsManager.AddMobile(mobile = new MobileObject(serial));
+                        MobileObject mobile = RenderObjectsManager.Get<MobileObject>().SingleOrDefault(s => s.Serial == serial);
+                        if (mobile == null)
+                            RenderObjectsManager.AddMobile(mobile = new MobileObject(serial));
 
-                    mobile.UpdatePosition(x, y);
-                }
+                        mobile.UpdatePosition(x, y);
+                    }
                     break;
-                case (int) MSG_RECV.MOBILE_REMOVE_STRCT:
-                {
-                    uint serial = (uint) m.LParam.ToInt32();
-                    MobileObject mobile = RenderObjectsManager.Get<MobileObject>().SingleOrDefault(s => s.Serial == serial);
-                    if (mobile != null)
-                        mobile.Dispose();
-                }
+                case (int)MSG_RECV.MOBILE_REMOVE_STRCT:
+                    {
+                        uint serial = (uint)m.LParam.ToInt32();
+                        MobileObject mobile = RenderObjectsManager.Get<MobileObject>().SingleOrDefault(s => s.Serial == serial);
+                        if (mobile != null)
+                            mobile.Dispose();
+                    }
                     break;
             }
 

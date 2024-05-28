@@ -191,7 +191,7 @@ namespace EnhancedMap.GUI.SettingsLayouts
 
         private void AssignEvents()
         {
-            comboBoxClientNum.SelectedIndexChanged += (sender, e) =>
+            /*comboBoxClientNum.SelectedIndexChanged += (sender, e) =>
             {
                 if (!_checkSelected)
                     return;
@@ -201,7 +201,7 @@ namespace EnhancedMap.GUI.SettingsLayouts
                     ClientInfo client = (ClientInfo) comboBoxClientNum.Items[comboBoxClientNum.SelectedIndex];
                     UOClientManager.AttachToClient(client.handle);
                 }
-            };
+            };*/
 
             customButtonRefreshClients.Click += (sender, e) => { ReloadClients(); };
 
